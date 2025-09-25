@@ -78,26 +78,23 @@ const props = defineProps({
   },
 })
 
-// Create column pinning state
 const columnPinning = ref({
   left: [],
   right: [],
 })
 
-// Transform columns for TanStack Table
 const transformedColumns = computed(() => {
   const transformColumn = (col, leafIndex, depth = 0) => {
-    // For grouped columns (have children)
-    if (col.children && col.children.length > 0) {
-      let currentLeafIndex = leafIndex
+    if (col.children?.length) {
       const transformedChildren = []
       const leafIndices = []
+      let currentLeafIndex = leafIndex
 
       col.children.forEach((child) => {
-        const result = transformColumn(child, currentLeafIndex, depth + 1)
-        transformedChildren.push(result.column)
-        leafIndices.push(...result.leafIndices)
-        currentLeafIndex = result.nextIndex
+        const { column, nextIndex, leafIndices: childLeafIndices } = transformColumn(child, currentLeafIndex, depth + 1)
+        transformedChildren.push(column)
+        leafIndices.push(...childLeafIndices)
+        currentLeafIndex = nextIndex
       })
 
       return {
@@ -107,17 +104,16 @@ const transformedColumns = computed(() => {
           columns: transformedChildren,
           meta: {
             originalColumn: col,
-            leafIndices: leafIndices, // Store all leaf indices under this group
+            leafIndices,
             isGroup: true,
-            depth: depth,
+            depth,
           },
         },
         nextIndex: currentLeafIndex,
-        leafIndices: leafIndices,
+        leafIndices,
       }
     }
 
-    // For leaf columns (actual data columns)
     return {
       column: {
         id: col.id?.toString() || col.dataField || `col_${leafIndex}`,
@@ -127,9 +123,9 @@ const transformedColumns = computed(() => {
         cell: (info) => info.getValue(),
         meta: {
           originalColumn: col,
-          leafIndex: leafIndex,
+          leafIndex,
           isGroup: false,
-          depth: depth,
+          depth,
         },
       },
       nextIndex: leafIndex + 1,
@@ -138,16 +134,13 @@ const transformedColumns = computed(() => {
   }
 
   let currentLeafIndex = 0
-  const result = []
-
-  props.columns.forEach((col) => {
-    const transformed = transformColumn(col, currentLeafIndex)
-    result.push(transformed.column)
-    currentLeafIndex = transformed.nextIndex
+  return props.columns.map((col) => {
+    const { column, nextIndex } = transformColumn(col, currentLeafIndex)
+    currentLeafIndex = nextIndex
+    return column
   })
-
-  return result
 })
+
 
 // Get all leaf columns in order
 const leafColumns = computed(() => {
@@ -204,32 +197,17 @@ const table = useVueTable({
   state: {
     columnPinning: columnPinning.value,
   },
-  onColumnPinningChange: (updater) => {
-    columnPinning.value = typeof updater === 'function' ? updater(columnPinning.value) : updater
-  },
   enableColumnResizing: true,
   columnResizeMode: 'onChange',
 })
 
-// Watch for pinning changes and update table state
-watch(
-  columnPinning,
-  (newPinning) => {
-    table.setColumnPinning(newPinning)
-  },
-  { deep: true },
-)
-
-// Helper function to determine if a header should be pinned
 const isPinnedColumn = (header) => {
-  // If the column itself is pinned
   if (header.column.getIsPinned()) return true
 
-  // If it's a group column, check if any of its leaves are pinned
-  if (header.column.columnDef.meta?.isGroup) {
-    const leafIndices = header.column.columnDef.meta.leafIndices || []
-    const pinnedLeft = columnPinning.value.left
-    const pinnedRight = columnPinning.value.right
+  const meta = header.column.columnDef.meta
+  if (meta?.isGroup) {
+    const { leafIndices = [] } = meta
+    const { left: pinnedLeft, right: pinnedRight } = columnPinning.value
     const leaves = leafColumns.value
 
     return leafIndices.some(index => {
@@ -243,28 +221,25 @@ const isPinnedColumn = (header) => {
 
 // Helper function to get the pinning side of a column
 const getColumnPinning = (header) => {
-  // If the column itself is pinned
   const directPinning = header.column.getIsPinned()
   if (directPinning) return directPinning
 
-  // If it's a group column, determine pinning based on its leaves
-  if (header.column.columnDef.meta?.isGroup) {
-    const leafIndices = header.column.columnDef.meta.leafIndices || []
-    const pinnedLeft = columnPinning.value.left
-    const pinnedRight = columnPinning.value.right
+  const meta = header.column.columnDef.meta
+  if (meta?.isGroup) {
+    const { leafIndices = [] } = meta
+    const { left: pinnedLeft, right: pinnedRight } = columnPinning.value
     const leaves = leafColumns.value
 
     const hasLeftPinned = leafIndices.some(index => {
       const leaf = leaves[index]
       return leaf && pinnedLeft.includes(leaf.id)
     })
+    if (hasLeftPinned) return 'left'
 
     const hasRightPinned = leafIndices.some(index => {
       const leaf = leaves[index]
       return leaf && pinnedRight.includes(leaf.id)
     })
-
-    if (hasLeftPinned) return 'left'
     if (hasRightPinned) return 'right'
   }
 
