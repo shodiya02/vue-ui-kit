@@ -8,13 +8,13 @@
             :key="header.id"
             :class="getHeaderClasses(header, headerIndex)"
             :colspan="header.colSpan"
+            :rowspan="getHeaderRowSpan(header)"
             :style="getHeaderStyles(header, headerIndex)"
+            v-show="shouldShowHeader(header, headerGroup.depth)"
           >
-            <FlexRender
-              v-if="!header.isPlaceholder"
-              :props="header.getContext()"
-              :render="header.column.columnDef.header"
-            />
+            <div
+              v-html="header.column.columnDef.header ? header.column.columnDef.header() : ''"
+            ></div>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -76,15 +76,25 @@ const transformedColumns = computed(() => {
   const transformColumn = (col) => {
     if (col.children && col.children.length > 0) {
       return columnHelper.group({
-        header: col.title,
+        id: col.id?.toString() || col.dataField || `group_${Math.random()}`,
+        header: () => col.title,
         columns: col.children.map((child) => transformColumn(child)),
-        width: col.width,
+        meta: {
+          originalColumn: col,
+          attributes: col.attributes || {},
+        },
       })
     } else {
       return columnHelper.accessor(col.dataField, {
+        id: col.id?.toString() || col.dataField,
         header: () => col.title,
-        cell: (info) => info.getValue(),
-        width: col.width,
+        cell: (info) => {
+          return info.getValue()
+        },
+        meta: {
+          originalColumn: col,
+          attributes: col.attributes || {},
+        },
       })
     }
   }
@@ -102,11 +112,33 @@ const table = useVueTable({
   getCoreRowModel: getCoreRowModel(),
 })
 
+// Determine if a header should be shown based on rowspan logic
+const shouldShowHeader = (header, depth) => {
+  const originalColumn = header.column.columnDef.meta?.originalColumn
+  if (!originalColumn) return true
+
+  // If this column has rowspan=2 and we're in the second row, don't show it
+  const hasRowspan = originalColumn.attributes?.rowspan === 2
+  return !(hasRowspan && depth > 0)
+}
+
+// Get the rowspan for a header
+const getHeaderRowSpan = (header) => {
+  const originalColumn = header.column.columnDef.meta?.originalColumn
+  if (!originalColumn) return 1
+
+  const rowspan = originalColumn.attributes?.rowspan
+  return rowspan || 1
+}
+
 // Get header classes including fixed positioning
 const getHeaderClasses = (header, headerIndex) => {
   const classes = ['text-center', 'border-r', 'bg-background']
+  const originalColumn = header.column.columnDef.meta?.originalColumn
 
-  classes.push(header.width)
+  if (originalColumn?.width) {
+    // You might want to add width classes here
+  }
 
   const leftFixed = props.leftFixed || 0
   const rightFixed = props.rightFixed || 0
@@ -117,7 +149,7 @@ const getHeaderClasses = (header, headerIndex) => {
   }
 
   if (rightFixed > 0 && headerIndex >= totalHeaders - rightFixed) {
-    classes.push('sticky', 'z-20', 'border-l-2', )
+    classes.push('sticky', 'z-20', 'border-l-2')
   }
 
   return classes
@@ -131,12 +163,20 @@ const getHeaderStyles = (header, headerIndex) => {
   const headerGroups = table.getHeaderGroups()
   const totalHeaders = headerGroups[0]?.headers.length || 0
 
+  // Apply original width from column metadata
+  const originalColumn = header.column.columnDef.meta?.originalColumn
+  if (originalColumn?.width) {
+    styles.width = `${originalColumn.width}px`
+    styles.minWidth = `${originalColumn.width}px`
+    styles.maxWidth = `${originalColumn.width}px`
+  }
+
   if (headerIndex < leftFixed) {
     // Calculate left offset for sticky positioning
     let leftOffset = 0
 
     if (headerGroups.length > 0) {
-      const currentHeaderGroup = headerGroups[0] // Use first header group for calculation
+      const currentHeaderGroup = headerGroups[0]
       for (let i = 0; i < headerIndex; i++) {
         const prevHeader = currentHeaderGroup.headers[i]
         const width = getColumnWidth(prevHeader.column.columnDef)
@@ -152,7 +192,7 @@ const getHeaderStyles = (header, headerIndex) => {
     let rightOffset = 0
 
     if (headerGroups.length > 0) {
-      const currentHeaderGroup = headerGroups[0] // Use first header group for calculation
+      const currentHeaderGroup = headerGroups[0]
       for (let i = headerIndex + 1; i < totalHeaders; i++) {
         const nextHeader = currentHeaderGroup.headers[i]
         const width = getColumnWidth(nextHeader.column.columnDef)
@@ -177,7 +217,7 @@ const getCellClasses = (cell, cellIndex) => {
     classes.push('sticky', 'z-10', 'border-r-2', 'border-r-gray-300')
   }
 
-  if (rightFixed > 0 &&cellIndex >= totalColumns - rightFixed) {
+  if (rightFixed > 0 && cellIndex >= totalColumns - rightFixed) {
     classes.push('sticky', 'z-10', 'border-l-2')
   }
 
@@ -191,6 +231,14 @@ const getCellStyles = (cell, cellIndex) => {
   const styles = {}
   const visibleColumns = table.getAllColumns().filter((col) => col.getIsVisible())
   const totalColumns = visibleColumns.length
+
+  // Apply original width from column metadata
+  const originalColumn = cell.column.columnDef.meta?.originalColumn
+  if (originalColumn?.width) {
+    styles.width = `${originalColumn.width}px`
+    styles.minWidth = `${originalColumn.width}px`
+    styles.maxWidth = `${originalColumn.width}px`
+  }
 
   if (cellIndex < leftFixed) {
     // Calculate left offset for sticky positioning
@@ -223,23 +271,9 @@ const getCellStyles = (cell, cellIndex) => {
 
 // Get column width from metadata or use default
 const getColumnWidth = (columnDef) => {
-  // Find the original column metadata
-  const findColumnMeta = (columns, accessor) => {
-    for (const col of columns) {
-      if (col.dataField === accessor) {
-        return col
-      }
-      if (col.children && col.children.length > 0) {
-        const found = findColumnMeta(col.children, accessor)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
-  const columnMeta = findColumnMeta(props.columns, columnDef.accessorKey)
-  if (columnMeta && columnMeta.width) {
-    return parseInt(columnMeta.width) || 100
+  const originalColumn = columnDef.meta?.originalColumn
+  if (originalColumn && originalColumn.width) {
+    return parseInt(originalColumn.width) || 100
   }
 
   // Default widths based on column position
@@ -248,29 +282,3 @@ const getColumnWidth = (columnDef) => {
   return 100
 }
 </script>
-
-<style scoped>
-/* Ensure sticky columns have proper shadows */
-:deep(.sticky) {
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Hide horizontal scrollbar but keep functionality */
-.overflow-auto::-webkit-scrollbar {
-  height: 8px;
-}
-
-.overflow-auto::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
-}
-
-.overflow-auto::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
-}
-
-.overflow-auto::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
-}
-</style>
