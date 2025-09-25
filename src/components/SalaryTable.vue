@@ -109,7 +109,7 @@ const tableMetadata = {
   title: '«REALSOFT» MCHJ ходимларининг ойлик харажатлари',
   groupingField: 'gr',
   leftFixed: 2,
-  rightFixed: 0,
+  rightFixed: 4,
   columns: [
     {
       dataField: '_rownum',
