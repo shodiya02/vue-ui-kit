@@ -1,20 +1,25 @@
 <template>
   <div class="relative border rounded-lg overflow-auto max-w-full">
-    <Table class="min-w-[1200px] w-full">
+    <Table class="w-full">
       <TableHeader>
         <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
           <TableHead
-            v-for="(header, headerIndex) in headerGroup.headers"
+            v-for="header in headerGroup.headers"
             :key="header.id"
-            :class="getHeaderClasses(header, headerIndex)"
+            :class="[
+              'text-center border-r bg-background',
+              {
+                'sticky z-20': header.column.getIsPinned(),
+                'border-r-2 border-r-gray-300': header.column.getIsPinned() === 'left',
+                'border-l-2': header.column.getIsPinned() === 'right',
+              },
+            ]"
             :colspan="header.colSpan"
-            :rowspan="getHeaderRowSpan(header)"
-            :style="getHeaderStyles(header, headerIndex)"
-            v-show="shouldShowHeader(header, headerGroup.depth)"
+            :style="getHeaderStyle(header)"
           >
-            <div
-              v-html="header.column.columnDef.header ? header.column.columnDef.header() : ''"
-            ></div>
+            <div v-if="!header.isPlaceholder">
+              {{ header.column.columnDef.header }}
+            </div>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -22,12 +27,19 @@
       <TableBody>
         <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
           <TableCell
-            v-for="(cell, cellIndex) in row.getVisibleCells()"
+            v-for="cell in row.getVisibleCells()"
             :key="cell.id"
-            :class="getCellClasses(cell, cellIndex)"
-            :style="getCellStyles(cell, cellIndex)"
+            :class="[
+              'text-center border-r bg-background',
+              {
+                'sticky z-10': cell.column.getIsPinned(),
+                'border-r-2 border-r-gray-300': cell.column.getIsPinned() === 'left',
+                'border-l-2': cell.column.getIsPinned() === 'right',
+              },
+            ]"
+            :style="getCellStyle(cell)"
           >
-            <FlexRender :props="cell.getContext()" :render="cell.column.columnDef.cell" />
+            {{ cell.getValue() }}
           </TableCell>
         </TableRow>
       </TableBody>
@@ -36,8 +48,8 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { createColumnHelper, FlexRender, getCoreRowModel, useVueTable } from '@tanstack/vue-table'
+import { computed, ref, watch } from 'vue'
+import { getCoreRowModel, useVueTable } from '@tanstack/vue-table'
 import {
   Table,
   TableBody,
@@ -64,44 +76,110 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
-  showSummary: {
-    type: Boolean,
-    default: false,
-  },
 })
 
-const columnHelper = createColumnHelper()
+// Create column pinning state
+const columnPinning = ref({
+  left: [],
+  right: [],
+})
 
+// Transform columns for TanStack Table
 const transformedColumns = computed(() => {
-  const transformColumn = (col) => {
+  const transformColumn = (col, leafIndex) => {
+    // For grouped columns (have children)
     if (col.children && col.children.length > 0) {
-      return columnHelper.group({
-        id: col.id?.toString() || col.dataField || `group_${Math.random()}`,
-        header: () => col.title,
-        columns: col.children.map((child) => transformColumn(child)),
+      let currentLeafIndex = leafIndex
+      const transformedChildren = []
+
+      col.children.forEach((child) => {
+        const result = transformColumn(child, currentLeafIndex)
+        transformedChildren.push(result.column)
+        currentLeafIndex = result.nextIndex
+      })
+
+      return {
+        column: {
+          id: col.id?.toString() || col.dataField || `group_${leafIndex}`,
+          header: col.title,
+          columns: transformedChildren,
+          meta: {
+            originalColumn: col,
+          },
+        },
+        nextIndex: currentLeafIndex,
+      }
+    }
+
+    // For leaf columns (actual data columns)
+    return {
+      column: {
+        id: col.id?.toString() || col.dataField || `col_${leafIndex}`,
+        accessorKey: col.dataField,
+        header: col.title,
+        size: parseInt(col.width) || 150,
+        cell: (info) => info.getValue(),
         meta: {
           originalColumn: col,
-          attributes: col.attributes || {},
+          leafIndex: leafIndex, // Store the leaf index for pinning
         },
-      })
-    } else {
-      return columnHelper.accessor(col.dataField, {
-        id: col.id?.toString() || col.dataField,
-        header: () => col.title,
-        cell: (info) => {
-          return info.getValue()
-        },
-        meta: {
-          originalColumn: col,
-          attributes: col.attributes || {},
-        },
-      })
+      },
+      nextIndex: leafIndex + 1,
     }
   }
 
-  return [...props.columns].map((col) => transformColumn(col))
+  let currentLeafIndex = 0
+  const result = []
+
+  props.columns.forEach((col) => {
+    const transformed = transformColumn(col, currentLeafIndex)
+    result.push(transformed.column)
+    currentLeafIndex = transformed.nextIndex
+  })
+
+  return result
 })
 
+// Get all leaf columns in order
+const leafColumns = computed(() => {
+  const leaves = []
+
+  const extractLeaves = (columns) => {
+    columns.forEach((col) => {
+      if (col.columns && col.columns.length > 0) {
+        extractLeaves(col.columns)
+      } else {
+        leaves.push(col)
+      }
+    })
+  }
+
+  extractLeaves(transformedColumns.value)
+  return leaves
+})
+
+// Calculate column pinning when props change
+watch(
+  [() => props.leftFixed, () => props.rightFixed, leafColumns],
+  () => {
+    const leaves = leafColumns.value
+
+    // Set left pinned columns
+    const leftPinned = leaves.slice(0, props.leftFixed).map((col) => col.id)
+
+    // Set right pinned columns
+    const rightPinned =
+      props.rightFixed > 0 ? leaves.slice(-props.rightFixed).map((col) => col.id) : []
+
+    columnPinning.value = {
+      left: leftPinned,
+      right: rightPinned,
+    }
+  },
+  { immediate: true },
+)
+
+// Create the table instance
 const table = useVueTable({
   get data() {
     return props.data
@@ -110,175 +188,93 @@ const table = useVueTable({
     return transformedColumns.value
   },
   getCoreRowModel: getCoreRowModel(),
+  enableColumnPinning: true,
+  state: {
+    columnPinning: columnPinning.value,
+  },
+  onColumnPinningChange: (updater) => {
+    columnPinning.value = typeof updater === 'function' ? updater(columnPinning.value) : updater
+  },
+  enableColumnResizing: true,
+  columnResizeMode: 'onChange',
 })
 
-// Determine if a header should be shown based on rowspan logic
-const shouldShowHeader = (header, depth) => {
-  const originalColumn = header.column.columnDef.meta?.originalColumn
-  if (!originalColumn) return true
+// Watch for pinning changes and update table state
+watch(
+  columnPinning,
+  (newPinning) => {
+    table.setColumnPinning(newPinning)
+  },
+  { deep: true },
+)
 
-  // If this column has rowspan=2 and we're in the second row, don't show it
-  const hasRowspan = originalColumn.attributes?.rowspan === 2
-  return !(hasRowspan && depth > 0)
+// Calculate styles for pinned headers
+const getHeaderStyle = (header) => {
+  const isPinned = header.column.getIsPinned()
+  if (!isPinned) return {}
+
+  const style = {}
+
+  if (isPinned === 'left') {
+    style.left = `${header.column.getStart('left')}px`
+  } else if (isPinned === 'right') {
+    style.right = `${header.column.getAfter('right')}px`
+  }
+
+  const width = header.column.columnDef.size || header.column.getSize()
+  style.width = `${width}px`
+  style.minWidth = `${width}px`
+
+  return style
 }
 
-// Get the rowspan for a header
-const getHeaderRowSpan = (header) => {
-  const originalColumn = header.column.columnDef.meta?.originalColumn
-  if (!originalColumn) return 1
+// Calculate styles for pinned cells
+const getCellStyle = (cell) => {
+  const isPinned = cell.column.getIsPinned()
+  if (!isPinned) return {}
 
-  const rowspan = originalColumn.attributes?.rowspan
-  return rowspan || 1
-}
+  const style = {}
 
-// Get header classes including fixed positioning
-const getHeaderClasses = (header, headerIndex) => {
-  const classes = ['text-center', 'border-r', 'bg-background']
-  const originalColumn = header.column.columnDef.meta?.originalColumn
-
-  if (originalColumn?.width) {
-    // You might want to add width classes here
+  if (isPinned === 'left') {
+    style.left = `${cell.column.getStart('left')}px`
+  } else if (isPinned === 'right') {
+    style.right = `${cell.column.getAfter('right')}px`
   }
 
-  const leftFixed = props.leftFixed || 0
-  const rightFixed = props.rightFixed || 0
-  const totalHeaders = table.getHeaderGroups()[0]?.headers.length || 0
+  const width = cell.column.columnDef.size || cell.column.getSize()
+  style.width = `${width}px`
+  style.minWidth = `${width}px`
 
-  if (headerIndex < leftFixed) {
-    classes.push('sticky', 'z-20', 'border-r-2', 'border-r-gray-300')
-  }
-
-  if (rightFixed > 0 && headerIndex >= totalHeaders - rightFixed) {
-    classes.push('sticky', 'z-20', 'border-l-2')
-  }
-
-  return classes
-}
-
-// Get header styles for fixed positioning
-const getHeaderStyles = (header, headerIndex) => {
-  const leftFixed = props.leftFixed || 0
-  const rightFixed = props.rightFixed || 0
-  const styles = {}
-  const headerGroups = table.getHeaderGroups()
-  const totalHeaders = headerGroups[0]?.headers.length || 0
-
-  // Apply original width from column metadata
-  const originalColumn = header.column.columnDef.meta?.originalColumn
-  if (originalColumn?.width) {
-    styles.width = `${originalColumn.width}px`
-    styles.minWidth = `${originalColumn.width}px`
-    styles.maxWidth = `${originalColumn.width}px`
-  }
-
-  if (headerIndex < leftFixed) {
-    // Calculate left offset for sticky positioning
-    let leftOffset = 0
-
-    if (headerGroups.length > 0) {
-      const currentHeaderGroup = headerGroups[0]
-      for (let i = 0; i < headerIndex; i++) {
-        const prevHeader = currentHeaderGroup.headers[i]
-        const width = getColumnWidth(prevHeader.column.columnDef)
-        leftOffset += width
-      }
-    }
-
-    styles.left = `${leftOffset}px`
-  }
-
-  if (headerIndex >= totalHeaders - rightFixed) {
-    // Calculate right offset for sticky positioning
-    let rightOffset = 0
-
-    if (headerGroups.length > 0) {
-      const currentHeaderGroup = headerGroups[0]
-      for (let i = headerIndex + 1; i < totalHeaders; i++) {
-        const nextHeader = currentHeaderGroup.headers[i]
-        const width = getColumnWidth(nextHeader.column.columnDef)
-        rightOffset += width
-      }
-    }
-
-    styles.right = `${rightOffset}px`
-  }
-
-  return styles
-}
-
-// Get cell classes including fixed positioning
-const getCellClasses = (cell, cellIndex) => {
-  const classes = ['text-center', 'border-r', 'bg-background']
-  const leftFixed = props.leftFixed || 0
-  const rightFixed = props.rightFixed || 0
-  const totalColumns = table.getAllColumns().filter((col) => col.getIsVisible()).length
-
-  if (cellIndex < leftFixed) {
-    classes.push('sticky', 'z-10', 'border-r-2', 'border-r-gray-300')
-  }
-
-  if (rightFixed > 0 && cellIndex >= totalColumns - rightFixed) {
-    classes.push('sticky', 'z-10', 'border-l-2')
-  }
-
-  return classes
-}
-
-// Get cell styles for fixed positioning
-const getCellStyles = (cell, cellIndex) => {
-  const leftFixed = props.leftFixed || 0
-  const rightFixed = props.rightFixed || 0
-  const styles = {}
-  const visibleColumns = table.getAllColumns().filter((col) => col.getIsVisible())
-  const totalColumns = visibleColumns.length
-
-  // Apply original width from column metadata
-  const originalColumn = cell.column.columnDef.meta?.originalColumn
-  if (originalColumn?.width) {
-    styles.width = `${originalColumn.width}px`
-    styles.minWidth = `${originalColumn.width}px`
-    styles.maxWidth = `${originalColumn.width}px`
-  }
-
-  if (cellIndex < leftFixed) {
-    // Calculate left offset for sticky positioning
-    let leftOffset = 0
-
-    for (let i = 0; i < cellIndex; i++) {
-      const prevColumn = visibleColumns[i]
-      const width = getColumnWidth(prevColumn.columnDef)
-      leftOffset += width
-    }
-
-    styles.left = `${leftOffset}px`
-  }
-
-  if (cellIndex >= totalColumns - rightFixed) {
-    // Calculate right offset for sticky positioning
-    let rightOffset = 0
-
-    for (let i = cellIndex + 1; i < totalColumns; i++) {
-      const nextColumn = visibleColumns[i]
-      const width = getColumnWidth(nextColumn.columnDef)
-      rightOffset += width
-    }
-
-    styles.right = `${rightOffset}px`
-  }
-
-  return styles
-}
-
-// Get column width from metadata or use default
-const getColumnWidth = (columnDef) => {
-  const originalColumn = columnDef.meta?.originalColumn
-  if (originalColumn && originalColumn.width) {
-    return parseInt(originalColumn.width) || 100
-  }
-
-  // Default widths based on column position
-  if (columnDef.accessorKey === '_rownum') return 50
-  if (columnDef.accessorKey === 'name') return 350
-  return 100
+  return style
 }
 </script>
+
+<style scoped>
+/* Ensure sticky positioning works properly */
+.sticky {
+  position: sticky !important;
+}
+
+/* Add shadow to pinned columns for better visual separation */
+th.sticky.z-20,
+td.sticky.z-10 {
+  background-color: white;
+}
+
+/* Shadow for left pinned columns */
+th.sticky.z-20:last-child,
+td.sticky.z-10:last-child {
+  box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.15);
+}
+
+/* Shadow for right pinned columns */
+th.sticky.z-20:first-child,
+td.sticky.z-10:first-child {
+  box-shadow: -2px 0 5px -2px rgba(0, 0, 0, 0.15);
+}
+
+/* Ensure table has proper layout */
+table {
+  table-layout: fixed;
+}
+</style>
