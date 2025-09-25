@@ -213,7 +213,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 41140,
@@ -238,7 +238,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 41133,
@@ -263,7 +263,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: false,
       },
       id: 41135,
@@ -288,7 +288,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 41132,
@@ -313,7 +313,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 41139,
@@ -338,7 +338,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 41143,

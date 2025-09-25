@@ -10,16 +10,18 @@
               'text-center border-r bg-background',
               {
                 'sticky z-20': isPinnedColumn(header),
-                'border-r-2 border-r-gray-300': getColumnPinning(header) === 'left' && isLastPinnedLeft(header),
-                'border-l-2 border-l-gray-300': getColumnPinning(header) === 'right' && isFirstPinnedRight(header),
+                'border-r-2 border-r-gray-300':
+                  getColumnPinning(header) === 'left' && isLastPinnedLeft(header),
+                'border-l-2 border-l-gray-300':
+                  getColumnPinning(header) === 'right' && isFirstPinnedRight(header),
               },
             ]"
             :colspan="header.colSpan"
+            :rowspan="getHeaderRowSpan(header)"
             :style="getHeaderStyle(header)"
+            v-show="shouldShowHeader(header, headerGroup.depth)"
           >
-            <div v-if="!header.isPlaceholder">
-              {{ header.column.columnDef.header }}
-            </div>
+            <div v-html="header.column.columnDef.header"/>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -33,8 +35,10 @@
               'text-center border-r bg-background',
               {
                 'sticky z-10': cell.column.getIsPinned(),
-                'border-r-2 border-r-gray-300': cell.column.getIsPinned() === 'left' && isLastPinnedLeftCell(cell),
-                'border-l-2 border-l-gray-300': cell.column.getIsPinned() === 'right' && isFirstPinnedRightCell(cell),
+                'border-r-2 border-r-gray-300':
+                  cell.column.getIsPinned() === 'left' && isLastPinnedLeftCell(cell),
+                'border-l-2 border-l-gray-300':
+                  cell.column.getIsPinned() === 'right' && isFirstPinnedRightCell(cell),
               },
             ]"
             :style="getCellStyle(cell)"
@@ -85,13 +89,19 @@ const columnPinning = ref({
 
 const transformedColumns = computed(() => {
   const transformColumn = (col, leafIndex, depth = 0) => {
+    const colRowSpan = col.attributes?.rowspan || 1 // Default to 1 if not specified
+
     if (col.children?.length) {
       const transformedChildren = []
       const leafIndices = []
       let currentLeafIndex = leafIndex
 
       col.children.forEach((child) => {
-        const { column, nextIndex, leafIndices: childLeafIndices } = transformColumn(child, currentLeafIndex, depth + 1)
+        const {
+          column,
+          nextIndex,
+          leafIndices: childLeafIndices,
+        } = transformColumn(child, currentLeafIndex, depth + 1)
         transformedChildren.push(column)
         leafIndices.push(...childLeafIndices)
         currentLeafIndex = nextIndex
@@ -107,6 +117,7 @@ const transformedColumns = computed(() => {
             leafIndices,
             isGroup: true,
             depth,
+            rowSpan: colRowSpan, // Add rowSpan to meta
           },
         },
         nextIndex: currentLeafIndex,
@@ -126,6 +137,7 @@ const transformedColumns = computed(() => {
           leafIndex,
           isGroup: false,
           depth,
+          rowSpan: colRowSpan, // Add rowSpan to meta for leaf columns too
         },
       },
       nextIndex: leafIndex + 1,
@@ -141,8 +153,6 @@ const transformedColumns = computed(() => {
   })
 })
 
-
-// Get all leaf columns in order
 const leafColumns = computed(() => {
   const leaves = []
 
@@ -160,21 +170,16 @@ const leafColumns = computed(() => {
   return leaves
 })
 
-// Calculate column pinning when props change
 watch(
   [() => props.leftFixed, () => props.rightFixed, leafColumns],
   () => {
     const leaves = leafColumns.value
 
-    // Set left pinned columns
-    const leftPinned = props.leftFixed > 0
-      ? leaves.slice(0, props.leftFixed).map((col) => col.id)
-      : []
+    const leftPinned =
+      props.leftFixed > 0 ? leaves.slice(0, props.leftFixed).map((col) => col.id) : []
 
-    // Set right pinned columns
-    const rightPinned = props.rightFixed > 0
-      ? leaves.slice(-props.rightFixed).map((col) => col.id)
-      : []
+    const rightPinned =
+      props.rightFixed > 0 ? leaves.slice(-props.rightFixed).map((col) => col.id) : []
 
     columnPinning.value = {
       left: leftPinned,
@@ -184,7 +189,6 @@ watch(
   { immediate: true },
 )
 
-// Create the table instance
 const table = useVueTable({
   get data() {
     return props.data
@@ -210,7 +214,7 @@ const isPinnedColumn = (header) => {
     const { left: pinnedLeft, right: pinnedRight } = columnPinning.value
     const leaves = leafColumns.value
 
-    return leafIndices.some(index => {
+    return leafIndices.some((index) => {
       const leaf = leaves[index]
       return leaf && (pinnedLeft.includes(leaf.id) || pinnedRight.includes(leaf.id))
     })
@@ -230,13 +234,13 @@ const getColumnPinning = (header) => {
     const { left: pinnedLeft, right: pinnedRight } = columnPinning.value
     const leaves = leafColumns.value
 
-    const hasLeftPinned = leafIndices.some(index => {
+    const hasLeftPinned = leafIndices.some((index) => {
       const leaf = leaves[index]
       return leaf && pinnedLeft.includes(leaf.id)
     })
     if (hasLeftPinned) return 'left'
 
-    const hasRightPinned = leafIndices.some(index => {
+    const hasRightPinned = leafIndices.some((index) => {
       const leaf = leaves[index]
       return leaf && pinnedRight.includes(leaf.id)
     })
@@ -253,7 +257,7 @@ const isLastPinnedLeft = (header) => {
     const leaves = leafColumns.value
     const lastLeftPinnedId = columnPinning.value.left[columnPinning.value.left.length - 1]
 
-    return leafIndices.some(index => {
+    return leafIndices.some((index) => {
       const leaf = leaves[index]
       return leaf && leaf.id === lastLeftPinnedId
     })
@@ -269,7 +273,7 @@ const isFirstPinnedRight = (header) => {
     const leaves = leafColumns.value
     const firstRightPinnedId = columnPinning.value.right[0]
 
-    return leafIndices.some(index => {
+    return leafIndices.some((index) => {
       const leaf = leaves[index]
       return leaf && leaf.id === firstRightPinnedId
     })
@@ -351,7 +355,7 @@ const getHeaderStyle = (header) => {
     const leaves = leafColumns.value
     let totalWidth = 0
 
-    leafIndices.forEach(index => {
+    leafIndices.forEach((index) => {
       const leaf = leaves[index]
       if (leaf) {
         totalWidth += leaf.size || 150
@@ -388,6 +392,22 @@ const getCellStyle = (cell) => {
 
   return style
 }
+
+function shouldShowHeader(header, depth) {
+  const originalColumn = header.column.columnDef.meta?.originalColumn
+  if (!originalColumn) return true
+
+  const hasRowspan = originalColumn.attributes?.rowspan === 2
+  return !(hasRowspan && depth > 0)
+}
+
+function getHeaderRowSpan(header) {
+  const originalColumn = header.column.columnDef.meta?.originalColumn
+  if (!originalColumn) return 1
+
+  return originalColumn.attributes?.rowspan || 1
+}
+
 </script>
 
 <style scoped>
