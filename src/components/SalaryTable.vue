@@ -3,11 +3,13 @@
     <BaseTable
       :columns="tableMetadata.columns"
       :data="processedEmployeeData"
-      :metadata="tableMetadata"
+      :left-fixed="tableMetadata.leftFixed"
+      :right-fixed="tableMetadata.rightFixed"
       :show-summary="true"
     />
   </div>
 </template>
+
 <script lang="ts" setup>
 import { computed } from 'vue'
 import BaseTable from '@/components/BaseTable.vue'
@@ -128,7 +130,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 44838,
@@ -152,7 +154,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 44837,
@@ -176,7 +178,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 44836,
@@ -200,7 +202,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: true,
       },
       id: 44841,
@@ -224,7 +226,7 @@ const tableMetadata = {
       numberFormat: null,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 44839,
@@ -248,7 +250,7 @@ const tableMetadata = {
       numberFormat: 1,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: true,
       },
       id: 44835,
@@ -564,7 +566,7 @@ const tableMetadata = {
       numberFormat: 2,
       children: [],
       attributes: {
-        rowspan: null,
+        rowspan: 2,
         sortable: null,
       },
       id: 44842,
@@ -911,4 +913,3 @@ const tableMetadata = {
   buttons: [],
 }
 </script>
-

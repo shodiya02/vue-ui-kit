@@ -1,43 +1,43 @@
 <template>
-  <div class="relative border rounded-lg overflow-hidden">
-  <Table class="min-w-[1200px] w-full">
-    <TableHeader>
-      <!-- Dynamic Headers based on depth -->
-      <TableRow v-for="(headerGroup, groupIndex) in table.getHeaderGroups()" :key="headerGroup.id">
-        <TableHead
-          v-for="header in headerGroup.headers"
-          :key="header.id"
-          :class="getHeaderClasses(header, groupIndex)"
-          :colspan="header.colSpan"
-          :rowspan="getHeaderRowSpan(header, groupIndex)"
-        >
-          <FlexRender
-            :props="header.getContext()"
-            :render="header.column.columnDef.header"
-          />
-        </TableHead>
-      </TableRow>
-    </TableHeader>
+  <div class="relative border rounded-lg overflow-auto max-w-full">
+    <Table class="min-w-[1200px] w-full table-fixed">
+      <TableHeader>
+        <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
+          <TableHead
+            v-for="(header, headerIndex) in headerGroup.headers"
+            :key="header.id"
+            :class="getHeaderClasses(header, headerIndex)"
+            :colspan="header.colSpan"
+            :rowspan="getHeaderRowspan(header)"
+            :style="getHeaderStyles(header, headerIndex)"
+          >
+            <div
+              v-html="typeof header.column.columnDef.header === 'function' ? header.column.columnDef.header() : header.column.columnDef.header"
+              class="text-xs leading-tight"
+            ></div>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
 
-    <TableBody>
-      <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
-        <TableCell
-          v-for="cell in row.getVisibleCells()"
-          :key="cell.id"
-          :class="getCellClasses(cell)"
-        >
-          <FlexRender :props="cell.getContext()" :render="cell.column.columnDef.cell" />
-        </TableCell>
-      </TableRow>
-
-    </TableBody>
-  </Table>
+      <TableBody>
+        <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
+          <TableCell
+            v-for="(cell, cellIndex) in row.getVisibleCells()"
+            :key="cell.id"
+            :class="getCellClasses(cell, cellIndex)"
+            :style="getCellStyles(cell, cellIndex)"
+          >
+            <FlexRender :props="cell.getContext()" :render="cell.column.columnDef.cell" />
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { FlexRender, getCoreRowModel, useVueTable } from '@tanstack/vue-table'
+import { createColumnHelper, FlexRender, getCoreRowModel, useVueTable } from '@tanstack/vue-table'
 import {
   Table,
   TableBody,
@@ -56,179 +56,273 @@ const props = defineProps({
     type: Array,
     required: true,
   },
-  metadata: {
-    type: Object,
-    default: () => ({}),
+  leftFixed: {
+    type: Number,
+    default: 0,
+  },
+  rightFixed: {
+    type: Number,
+    default: 0,
+  },
+  showSummary: {
+    type: Boolean,
+    default: false,
   },
 })
 
-// Transform backend columns to TanStack format
+const columnHelper = createColumnHelper()
+
 const transformedColumns = computed(() => {
-  const transformColumn = (col, depth = 0) => {
-    const baseColumn = {
-      id: col.id?.toString() || col.dataField || `col-${Math.random()}`,
-      accessorKey: col.dataField,
-      header: col.title?.replace(/<br\s*\/?>/gi, '\n') || '',
-      meta: {
-        width: col.width,
-        depth,
-      },
-      cell: ({ getValue, row }) => {
-        const value = getValue()
-        return formatCellValue(value, col, row.original)
-      },
-    }
-
-    // Handle grouped columns
+  const transformColumn = (col) => {
     if (col.children && col.children.length > 0) {
-      baseColumn.columns = col.children.map(child => transformColumn(child, depth + 1))
+      return columnHelper.group({
+        header: col.title,
+        columns: col.children.map((child) => transformColumn(child)),
+        width: col.width,
+        meta: {
+          attributes: col.attributes || {},
+          originalColumn: col,
+        },
+      })
+    } else {
+      return columnHelper.accessor(col.dataField, {
+        header: () => col.title,
+        cell: (info) => info.getValue(),
+        width: col.width,
+        meta: {
+          attributes: col.attributes || {},
+          originalColumn: col,
+        },
+      })
     }
-
-    return baseColumn
   }
 
-  return props.columns.map(col => transformColumn(col))
+  return [...props.columns].map((col) => transformColumn(col))
 })
 
-// Create table instance as computed property
-const table = computed(() => useVueTable({
-  data: props.data,
-  columns: transformedColumns.value,
+const table = useVueTable({
+  get data() {
+    return props.data
+  },
+  get columns() {
+    return transformedColumns.value
+  },
   getCoreRowModel: getCoreRowModel(),
-}))
+})
 
-const formatCellValue = (value, columnMeta, rowData) => {
-  if (value === null || value === undefined) return ''
+// Get header classes including fixed positioning
+const getHeaderClasses = (header, headerIndex) => {
+  const classes = ['text-center', 'border-r', 'bg-background']
 
-  // Apply number formatting
-  if (columnMeta.numberFormat !== null && typeof value === 'number') {
-    return value.toLocaleString('uz-UZ', {
-      minimumFractionDigits: columnMeta.numberFormat || 0,
-      maximumFractionDigits: columnMeta.numberFormat || 0,
-    })
+  const leftFixed = props.leftFixed || 0
+  const rightFixed = props.rightFixed || 0
+  const totalHeaders = table.getHeaderGroups()[0]?.headers.length || 0
+
+  if (headerIndex < leftFixed) {
+    classes.push('sticky', 'z-20', 'border-r-2', 'border-r-gray-300')
   }
 
-  return value
-}
-
-// Get header classes for styling
-const getHeaderClasses = (header, groupIndex) => {
-  const classes = ['text-center', 'border-r']
-  const meta = header.column.columnDef.meta || {}
-
-  if (meta.fixed === 'left') {
-    classes.push('sticky', 'z-20', 'bg-background')
-    // Dynamic left positioning based on previous fixed columns
-    const leftOffset = getLeftOffset(header.column.id)
-    if (leftOffset > 0) {
-      classes.push(`left-[${leftOffset}px]`)
-    } else {
-      classes.push('left-0')
-    }
-  }
-
-  if (meta.fixed === 'right') {
-    classes.push('sticky', 'z-20', 'bg-background', 'border-l')
-    const rightOffset = getRightOffset(header.column.id)
-    if (rightOffset > 0) {
-      classes.push(`right-[${rightOffset}px]`)
-    } else {
-      classes.push('right-0')
-    }
+  if (rightFixed > 0 && headerIndex >= totalHeaders - rightFixed) {
+    classes.push('sticky', 'z-20', 'border-l-2', 'border-l-gray-300')
   }
 
   return classes
 }
 
-// Get cell classes for styling
-const getCellClasses = (cell) => {
-  const classes = ['text-center', 'border-r']
-  const meta = cell.column.columnDef.meta || {}
+// Get header styles for fixed positioning
+const getHeaderStyles = (header, headerIndex) => {
+  const leftFixed = props.leftFixed || 0
+  const rightFixed = props.rightFixed || 0
+  const styles = {}
+  const headerGroups = table.getHeaderGroups()
+  const totalHeaders = headerGroups[0]?.headers.length || 0
 
-  if (meta.fixed === 'left') {
-    classes.push('sticky', 'z-10', 'bg-background')
-    const leftOffset = getLeftOffset(cell.column.id)
-    if (leftOffset > 0) {
-      classes.push(`left-[${leftOffset}px]`)
-    } else {
-      classes.push('left-0')
+  // Set column width
+  const width = getColumnWidth(header.column.columnDef)
+  styles.width = `${width}px`
+  styles.minWidth = `${width}px`
+  styles.maxWidth = `${width}px`
+
+  if (headerIndex < leftFixed) {
+    // Calculate left offset for sticky positioning
+    let leftOffset = 0
+
+    if (headerGroups.length > 0) {
+      const currentHeaderGroup = headerGroups[0]
+      for (let i = 0; i < headerIndex; i++) {
+        const prevHeader = currentHeaderGroup.headers[i]
+        const width = getColumnWidth(prevHeader.column.columnDef)
+        leftOffset += width
+      }
     }
+
+    styles.left = `${leftOffset}px`
+    styles.position = 'sticky'
   }
 
-  if (meta.fixed === 'right') {
-    classes.push('sticky', 'z-10', 'bg-background', 'border-l')
-    const rightOffset = getRightOffset(cell.column.id)
-    if (rightOffset > 0) {
-      classes.push(`right-[${rightOffset}px]`)
-    } else {
-      classes.push('right-0')
+  if (headerIndex >= totalHeaders - rightFixed) {
+    // Calculate right offset for sticky positioning
+    let rightOffset = 0
+
+    if (headerGroups.length > 0) {
+      const currentHeaderGroup = headerGroups[0]
+      for (let i = headerIndex + 1; i < totalHeaders; i++) {
+        const nextHeader = currentHeaderGroup.headers[i]
+        const width = getColumnWidth(nextHeader.column.columnDef)
+        rightOffset += width
+      }
     }
+
+    styles.right = `${rightOffset}px`
+    styles.position = 'sticky'
+  }
+
+  return styles
+}
+
+// Get cell classes including fixed positioning
+const getCellClasses = (cell, cellIndex) => {
+  const classes = ['text-center', 'border-r', 'bg-background']
+  const leftFixed = props.leftFixed || 0
+  const rightFixed = props.rightFixed || 0
+  const totalColumns = table.getAllColumns().filter((col) => col.getIsVisible()).length
+
+  if (cellIndex < leftFixed) {
+    classes.push('sticky', 'z-10', 'border-r-2', 'border-r-gray-300')
+  }
+
+  if (rightFixed > 0 && cellIndex >= totalColumns - rightFixed) {
+    classes.push('sticky', 'z-10', 'border-l-2', 'border-l-gray-300')
   }
 
   return classes
 }
 
-// Calculate left offset for fixed columns
-const getLeftOffset = (columnId) => {
-  // This would need to be calculated based on the widths of previous left-fixed columns
-  // For now, returning 0 as a placeholder
-  return 0
-}
+// Get cell styles for fixed positioning
+const getCellStyles = (cell, cellIndex) => {
+  const leftFixed = props.leftFixed || 0
+  const rightFixed = props.rightFixed || 0
+  const styles = {}
+  const visibleColumns = table.getAllColumns().filter((col) => col.getIsVisible())
+  const totalColumns = visibleColumns.length
 
-// Calculate right offset for fixed columns
-const getRightOffset = (columnId) => {
-  // This would need to be calculated based on the widths of following right-fixed columns
-  // For now, returning 0 as a placeholder
-  return 0
-}
+  // Set column width
+  const width = getColumnWidth(cell.column.columnDef)
+  styles.width = `${width}px`
+  styles.minWidth = `${width}px`
+  styles.maxWidth = `${width}px`
 
-// Calculate header rowspan
-const getHeaderRowSpan = (header, groupIndex) => {
-  // Calculate rowspan based on depth and whether column has children
-  const totalDepth = table.value.getHeaderGroups().length
-  const hasChildren = header.column.columnDef.columns && header.column.columnDef.columns.length > 0
+  if (cellIndex < leftFixed) {
+    // Calculate left offset for sticky positioning
+    let leftOffset = 0
 
-  if (!hasChildren && groupIndex === 0) {
-    return totalDepth
+    for (let i = 0; i < cellIndex; i++) {
+      const prevColumn = visibleColumns[i]
+      const width = getColumnWidth(prevColumn.columnDef)
+      leftOffset += width
+    }
+
+    styles.left = `${leftOffset}px`
+    styles.position = 'sticky'
   }
 
-  return 1
+  if (cellIndex >= totalColumns - rightFixed) {
+    // Calculate right offset for sticky positioning
+    let rightOffset = 0
+
+    for (let i = cellIndex + 1; i < totalColumns; i++) {
+      const nextColumn = visibleColumns[i]
+      const width = getColumnWidth(nextColumn.columnDef)
+      rightOffset += width
+    }
+
+    styles.right = `${rightOffset}px`
+    styles.position = 'sticky'
+  }
+
+  return styles
+}
+
+// Get header rowspan from column attributes
+const getHeaderRowspan = (header) => {
+  const attributes = header.column.columnDef.meta?.attributes || {}
+  return attributes.rowspan || 1
+}
+
+// Get column width from metadata or use default
+const getColumnWidth = (columnDef) => {
+  // First try to get from meta if available
+  if (columnDef.meta?.originalColumn?.width) {
+    return parseInt(columnDef.meta.originalColumn.width) || 100
+  }
+
+  // Find the original column metadata
+  const findColumnMeta = (columns, accessor) => {
+    for (const col of columns) {
+      if (col.dataField === accessor) {
+        return col
+      }
+      if (col.children && col.children.length > 0) {
+        const found = findColumnMeta(col.children, accessor)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  const columnMeta = findColumnMeta(props.columns, columnDef.accessorKey)
+  if (columnMeta && columnMeta.width) {
+    return parseInt(columnMeta.width) || 100
+  }
+
+  // Default widths based on column position
+  if (columnDef.accessorKey === '_rownum') return 50
+  if (columnDef.accessorKey === 'name') return 350
+  return 100
 }
 </script>
 
 <style scoped>
-/* Add shadows to fixed columns for better visibility */
-:deep(.sticky.left-0::after),
-:deep(.sticky.left-\[50px\]::after) {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: -3px;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.08), transparent);
-  pointer-events: none;
+/* Ensure sticky columns have proper shadows */
+:deep(.sticky) {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+  background-color: inherit;
+  z-index: 10;
 }
 
-:deep(.sticky.right-0::before),
-:deep(.sticky.right-\[100px\]::before) {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -3px;
-  bottom: 0;
-  width: 3px;
-  background: linear-gradient(to left, rgba(0, 0, 0, 0.08), transparent);
-  pointer-events: none;
+/* Fix for sticky header cells */
+:deep(th.sticky) {
+  z-index: 20;
+  background-color: hsl(var(--background));
 }
 
-/* Ensure headers have proper background */
-:deep(thead th) {
-  background: hsl(var(--background));
+/* Fix for sticky body cells */
+:deep(td.sticky) {
+  z-index: 10;
+  background-color: hsl(var(--background));
 }
 
-/* Fix z-index layering for sticky headers */
-:deep(thead th.sticky) {
-  z-index: 30;
+/* Ensure table layout is fixed for consistent column widths */
+:deep(.table) {
+  table-layout: fixed;
+}
+
+/* Hide horizontal scrollbar but keep functionality */
+.overflow-auto::-webkit-scrollbar {
+  height: 8px;
+}
+
+.overflow-auto::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.overflow-auto::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.overflow-auto::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
 }
 </style>
