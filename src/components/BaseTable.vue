@@ -1,6 +1,6 @@
 <template>
   <div class="relative border rounded-lg overflow-auto max-w-full">
-    <Table class="min-w-[1200px] w-full table-fixed">
+    <Table class="min-w-[1200px] w-full">
       <TableHeader>
         <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
           <TableHead
@@ -8,13 +8,13 @@
             :key="header.id"
             :class="getHeaderClasses(header, headerIndex)"
             :colspan="header.colSpan"
-            :rowspan="getHeaderRowspan(header)"
             :style="getHeaderStyles(header, headerIndex)"
           >
-            <div
-              v-html="typeof header.column.columnDef.header === 'function' ? header.column.columnDef.header() : header.column.columnDef.header"
-              class="text-xs leading-tight"
-            ></div>
+            <FlexRender
+              v-if="!header.isPlaceholder"
+              :props="header.getContext()"
+              :render="header.column.columnDef.header"
+            />
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -79,20 +79,12 @@ const transformedColumns = computed(() => {
         header: col.title,
         columns: col.children.map((child) => transformColumn(child)),
         width: col.width,
-        meta: {
-          attributes: col.attributes || {},
-          originalColumn: col,
-        },
       })
     } else {
       return columnHelper.accessor(col.dataField, {
         header: () => col.title,
         cell: (info) => info.getValue(),
         width: col.width,
-        meta: {
-          attributes: col.attributes || {},
-          originalColumn: col,
-        },
       })
     }
   }
@@ -114,6 +106,8 @@ const table = useVueTable({
 const getHeaderClasses = (header, headerIndex) => {
   const classes = ['text-center', 'border-r', 'bg-background']
 
+  classes.push(header.width)
+
   const leftFixed = props.leftFixed || 0
   const rightFixed = props.rightFixed || 0
   const totalHeaders = table.getHeaderGroups()[0]?.headers.length || 0
@@ -123,7 +117,7 @@ const getHeaderClasses = (header, headerIndex) => {
   }
 
   if (rightFixed > 0 && headerIndex >= totalHeaders - rightFixed) {
-    classes.push('sticky', 'z-20', 'border-l-2', 'border-l-gray-300')
+    classes.push('sticky', 'z-20', 'border-l-2', )
   }
 
   return classes
@@ -137,18 +131,12 @@ const getHeaderStyles = (header, headerIndex) => {
   const headerGroups = table.getHeaderGroups()
   const totalHeaders = headerGroups[0]?.headers.length || 0
 
-  // Set column width
-  const width = getColumnWidth(header.column.columnDef)
-  styles.width = `${width}px`
-  styles.minWidth = `${width}px`
-  styles.maxWidth = `${width}px`
-
   if (headerIndex < leftFixed) {
     // Calculate left offset for sticky positioning
     let leftOffset = 0
 
     if (headerGroups.length > 0) {
-      const currentHeaderGroup = headerGroups[0]
+      const currentHeaderGroup = headerGroups[0] // Use first header group for calculation
       for (let i = 0; i < headerIndex; i++) {
         const prevHeader = currentHeaderGroup.headers[i]
         const width = getColumnWidth(prevHeader.column.columnDef)
@@ -157,7 +145,6 @@ const getHeaderStyles = (header, headerIndex) => {
     }
 
     styles.left = `${leftOffset}px`
-    styles.position = 'sticky'
   }
 
   if (headerIndex >= totalHeaders - rightFixed) {
@@ -165,7 +152,7 @@ const getHeaderStyles = (header, headerIndex) => {
     let rightOffset = 0
 
     if (headerGroups.length > 0) {
-      const currentHeaderGroup = headerGroups[0]
+      const currentHeaderGroup = headerGroups[0] // Use first header group for calculation
       for (let i = headerIndex + 1; i < totalHeaders; i++) {
         const nextHeader = currentHeaderGroup.headers[i]
         const width = getColumnWidth(nextHeader.column.columnDef)
@@ -174,7 +161,6 @@ const getHeaderStyles = (header, headerIndex) => {
     }
 
     styles.right = `${rightOffset}px`
-    styles.position = 'sticky'
   }
 
   return styles
@@ -191,8 +177,8 @@ const getCellClasses = (cell, cellIndex) => {
     classes.push('sticky', 'z-10', 'border-r-2', 'border-r-gray-300')
   }
 
-  if (rightFixed > 0 && cellIndex >= totalColumns - rightFixed) {
-    classes.push('sticky', 'z-10', 'border-l-2', 'border-l-gray-300')
+  if (rightFixed > 0 &&cellIndex >= totalColumns - rightFixed) {
+    classes.push('sticky', 'z-10', 'border-l-2')
   }
 
   return classes
@@ -206,12 +192,6 @@ const getCellStyles = (cell, cellIndex) => {
   const visibleColumns = table.getAllColumns().filter((col) => col.getIsVisible())
   const totalColumns = visibleColumns.length
 
-  // Set column width
-  const width = getColumnWidth(cell.column.columnDef)
-  styles.width = `${width}px`
-  styles.minWidth = `${width}px`
-  styles.maxWidth = `${width}px`
-
   if (cellIndex < leftFixed) {
     // Calculate left offset for sticky positioning
     let leftOffset = 0
@@ -223,7 +203,6 @@ const getCellStyles = (cell, cellIndex) => {
     }
 
     styles.left = `${leftOffset}px`
-    styles.position = 'sticky'
   }
 
   if (cellIndex >= totalColumns - rightFixed) {
@@ -237,25 +216,13 @@ const getCellStyles = (cell, cellIndex) => {
     }
 
     styles.right = `${rightOffset}px`
-    styles.position = 'sticky'
   }
 
   return styles
 }
 
-// Get header rowspan from column attributes
-const getHeaderRowspan = (header) => {
-  const attributes = header.column.columnDef.meta?.attributes || {}
-  return attributes.rowspan || 1
-}
-
 // Get column width from metadata or use default
 const getColumnWidth = (columnDef) => {
-  // First try to get from meta if available
-  if (columnDef.meta?.originalColumn?.width) {
-    return parseInt(columnDef.meta.originalColumn.width) || 100
-  }
-
   // Find the original column metadata
   const findColumnMeta = (columns, accessor) => {
     for (const col of columns) {
@@ -286,25 +253,6 @@ const getColumnWidth = (columnDef) => {
 /* Ensure sticky columns have proper shadows */
 :deep(.sticky) {
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
-  background-color: inherit;
-  z-index: 10;
-}
-
-/* Fix for sticky header cells */
-:deep(th.sticky) {
-  z-index: 20;
-  background-color: hsl(var(--background));
-}
-
-/* Fix for sticky body cells */
-:deep(td.sticky) {
-  z-index: 10;
-  background-color: hsl(var(--background));
-}
-
-/* Ensure table layout is fixed for consistent column widths */
-:deep(.table) {
-  table-layout: fixed;
 }
 
 /* Hide horizontal scrollbar but keep functionality */
