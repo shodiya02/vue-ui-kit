@@ -411,10 +411,6 @@ function getHeaderRowSpan(header) {
 </script>
 
 <style scoped>
-/* Ensure sticky positioning works properly */
-.sticky {
-  position: sticky !important;
-}
 
 /* Add shadow to pinned columns for better visual separation */
 th.sticky.z-20,

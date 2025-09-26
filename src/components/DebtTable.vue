@@ -161,11 +161,7 @@ const processedEmployeeData = computed(() => {
   return rawEmployeeData.map((employee, index) => ({
     ...employee,
     _rownum: index + 1,
-    worked_percent:
-      employee.work_time_norm > 0
-        ? ((employee.worked_hours / employee.work_time_norm) * 100).toFixed(2)
-        : 0,
-    id: employee.staff_id || `emp_${index}`,
+    id: `emp_${index}`,
   }))
 })
 

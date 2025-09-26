@@ -108,7 +108,7 @@ const processedEmployeeData = computed(() => {
 const tableMetadata = {
   title: '«REALSOFT» MCHJ ходимларининг ойлик харажатлари',
   groupingField: 'gr',
-  leftFixed: 2,
+  leftFixed: 3,
   rightFixed: 4,
   columns: [
     {
