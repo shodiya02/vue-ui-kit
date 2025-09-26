@@ -1,10 +1,8 @@
 <template>
   <div class="max-w-7xl mx-auto p-4">
     <BaseTable
-      :columns="tableMetadata.columns"
+      :table-metadata="tableMetadata"
       :data="processedEmployeeData"
-      :left-fixed="tableMetadata.leftFixed"
-      :right-fixed="tableMetadata.rightFixed"
       :show-summary="true"
     />
   </div>
@@ -177,7 +175,7 @@ const tableMetadata = {
   fitHeightToParent: false,
   height: null,
   leftFixed: null,
-  rightFixed: 4,
+  rightFixed: 5,
   searchLink: null,
   searchPlaceholder: null,
   paginationSize: 15,

@@ -1,6 +1,6 @@
 <template>
-  <SalaryTable/>
-<!--  <DebtTable/>-->
+<!--  <SalaryTable/>-->
+  <DebtTable/>
 </template>
 
 <script setup>

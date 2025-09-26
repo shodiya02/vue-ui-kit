@@ -5,6 +5,7 @@
         <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
           <TableHead
             v-for="header in headerGroup.headers"
+            v-show="shouldShowHeader(header, headerGroup.depth)"
             :key="header.id"
             :class="[
               'text-center border-r bg-background',
@@ -19,32 +20,44 @@
             :colspan="header.colSpan"
             :rowspan="getHeaderRowSpan(header)"
             :style="getHeaderStyle(header)"
-            v-show="shouldShowHeader(header, headerGroup.depth)"
           >
-            <div v-html="header.column.columnDef.header"/>
+            <div v-html="header.column.columnDef.header" />
           </TableHead>
         </TableRow>
       </TableHeader>
 
       <TableBody>
         <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
-          <TableCell
-            v-for="cell in row.getVisibleCells()"
-            :key="cell.id"
-            :class="[
-              'text-center border-r bg-background',
-              {
-                'sticky z-10': cell.column.getIsPinned(),
-                'border-r-2 border-r-gray-300':
-                  cell.column.getIsPinned() === 'left' && isLastPinnedLeftCell(cell),
-                'border-l-2 border-l-gray-300':
-                  cell.column.getIsPinned() === 'right' && isFirstPinnedRightCell(cell),
-              },
-            ]"
-            :style="getCellStyle(cell)"
-          >
-            {{ cell.getValue() }}
-          </TableCell>
+          <!-- Check if this is a group header row -->
+          <template v-if="row.original.__isGroupHeader">
+            <TableCell
+              :colspan="leafColumns.length"
+              class="text-center font-semibold py-3 border-b-2 border-gray-300 bg-gray-100"
+            >
+              {{ row.original.__groupName }}
+            </TableCell>
+          </template>
+
+          <!-- Regular data row -->
+          <template v-else>
+            <TableCell
+              v-for="cell in row.getVisibleCells()"
+              :key="cell.id"
+              :class="[
+                'text-center border-r bg-background',
+                {
+                  'sticky z-10': cell.column.getIsPinned(),
+                  'border-r-2 border-r-gray-300':
+                    cell.column.getIsPinned() === 'left' && isLastPinnedLeftCell(cell),
+                  'border-l-2 border-l-gray-300':
+                    cell.column.getIsPinned() === 'right' && isFirstPinnedRightCell(cell),
+                },
+              ]"
+              :style="getCellStyle(cell)"
+            >
+              {{ cell.getValue() }}
+            </TableCell>
+          </template>
         </TableRow>
       </TableBody>
     </Table>
@@ -70,7 +83,7 @@ const props = defineProps({
   },
   columns: {
     type: Array,
-    required: true,
+    required: false,
   },
   leftFixed: {
     type: Number,
@@ -80,6 +93,31 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  groupingField: {
+    type: String,
+    default: null,
+  },
+  tableMetadata: {
+    type: Object,
+    default: null,
+  },
+})
+
+// Use tableMetadata if provided, otherwise fall back to individual props
+const effectiveLeftFixed = computed(() => {
+  return props.tableMetadata?.leftFixed ?? props.leftFixed
+})
+
+const effectiveRightFixed = computed(() => {
+  return props.tableMetadata?.rightFixed ?? props.rightFixed
+})
+
+const effectiveGroupingField = computed(() => {
+  return props.tableMetadata?.groupingField ?? props.groupingField
+})
+
+const effectiveColumns = computed(() => {
+  return props.tableMetadata?.columns ?? props.columns
 })
 
 const columnPinning = ref({
@@ -146,7 +184,7 @@ const transformedColumns = computed(() => {
   }
 
   let currentLeafIndex = 0
-  return props.columns.map((col) => {
+  return effectiveColumns.value.map((col) => {
     const { column, nextIndex } = transformColumn(col, currentLeafIndex)
     currentLeafIndex = nextIndex
     return column
@@ -170,16 +208,58 @@ const leafColumns = computed(() => {
   return leaves
 })
 
+// Create enhanced data with group information
+const enhancedData = computed(() => {
+  if (!effectiveGroupingField.value) {
+    return props.data.map((item, index) => ({ ...item, __rowIndex: index, __isGroupHeader: false }))
+  }
+
+  const result = []
+  const groups = {}
+
+  // Group the data
+  props.data.forEach((item) => {
+    const groupValue = item[effectiveGroupingField.value] || 'Ungrouped'
+    if (!groups[groupValue]) {
+      groups[groupValue] = []
+    }
+    groups[groupValue].push(item)
+  })
+
+  // Add group headers and data rows
+  let rowIndex = 0
+  Object.entries(groups).forEach(([groupName, items]) => {
+    // Add group header row
+    result.push({
+      __isGroupHeader: true,
+      __groupName: groupName,
+      __rowIndex: rowIndex++,
+      [effectiveGroupingField.value]: groupName,
+    })
+
+    // Add data rows
+    items.forEach((item) => {
+      result.push({ ...item, __rowIndex: rowIndex++, __isGroupHeader: false })
+    })
+  })
+
+  return result
+})
+
 watch(
-  [() => props.leftFixed, () => props.rightFixed, leafColumns],
+  [effectiveLeftFixed, effectiveRightFixed, leafColumns],
   () => {
     const leaves = leafColumns.value
 
     const leftPinned =
-      props.leftFixed > 0 ? leaves.slice(0, props.leftFixed).map((col) => col.id) : []
+      effectiveLeftFixed.value > 0
+        ? leaves.slice(0, effectiveLeftFixed.value).map((col) => col.id)
+        : []
 
     const rightPinned =
-      props.rightFixed > 0 ? leaves.slice(-props.rightFixed).map((col) => col.id) : []
+      effectiveRightFixed.value > 0
+        ? leaves.slice(-effectiveRightFixed.value).map((col) => col.id)
+        : []
 
     columnPinning.value = {
       left: leftPinned,
@@ -191,7 +271,7 @@ watch(
 
 const table = useVueTable({
   get data() {
-    return props.data
+    return enhancedData.value
   },
   get columns() {
     return transformedColumns.value
@@ -408,39 +488,6 @@ function getHeaderRowSpan(header) {
   return originalColumn.attributes?.rowspan || 1
 }
 
+
 </script>
 
-<style scoped>
-
-/* Add shadow to pinned columns for better visual separation */
-th.sticky.z-20,
-td.sticky.z-10 {
-  background-color: white;
-}
-
-/* Shadow for left pinned columns - only on the rightmost edge */
-th.border-r-2.border-r-gray-300.sticky,
-td.border-r-2.border-r-gray-300.sticky {
-  box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.15);
-}
-
-/* Shadow for right pinned columns - only on the leftmost edge */
-th.border-l-2.border-l-gray-300.sticky,
-td.border-l-2.border-l-gray-300.sticky {
-  box-shadow: -2px 0 5px -2px rgba(0, 0, 0, 0.15);
-}
-
-/* Ensure table has proper layout */
-table {
-  table-layout: fixed;
-}
-
-/* Ensure proper z-index layering */
-thead th.sticky {
-  z-index: 20 !important;
-}
-
-tbody td.sticky {
-  z-index: 10 !important;
-}
-</style>
