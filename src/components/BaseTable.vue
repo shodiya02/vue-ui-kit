@@ -32,7 +32,7 @@
           <template v-if="row.original.__isGroupHeader">
             <TableCell
               :colspan="leafColumns.length"
-              class="text-center font-semibold py-3 border-b-2 border-gray-300 bg-gray-100"
+              class="text-center font-semibold py-3 border-b-2 border-gray-300 bg-gray-100 group-header"
             >
               {{ row.original.__groupName }}
             </TableCell>
@@ -487,7 +487,41 @@ function getHeaderRowSpan(header) {
 
   return originalColumn.attributes?.rowspan || 1
 }
-
-
 </script>
 
+<style scoped>
+/* Ensure table has proper layout */
+table {
+  table-layout: fixed;
+}
+
+/* Ensure proper z-index layering */
+thead th.sticky {
+  z-index: 20 !important;
+}
+
+tbody td.sticky {
+  z-index: 10 !important;
+}
+
+/* Group header styling */
+.bg-gray-100 {
+  background-color: #f3f4f6 !important;
+}
+
+/* Simple group header styles */
+td[colspan] {
+  text-align: center !important;
+}
+.group-header {
+  position: sticky !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 15 !important;
+  min-width: 100% !important;
+  background-color: white !important;
+}
+</style>
